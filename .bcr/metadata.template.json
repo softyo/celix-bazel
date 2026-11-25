@@ -1,0 +1,16 @@
+{
+  "homepage": "https://github.com/softyo/celix-bazel",
+  "maintainers": [
+    {
+      "name": "Cyril Masia",
+      "email": "cma@softyo.es",
+      "github": "cmasia",
+      "github_user_id": 26604712
+    }
+  ],
+  "repository": [
+    "github:softyo/celix-bazel"
+  ],
+  "versions": [],
+  "yanked_versions": {}
+}

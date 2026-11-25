@@ -1,0 +1,167 @@
+# Release workflow: produce the exact BCR source archive and publish it.
+#
+# Triggered by a tag push (v*). Produces the asset .bcr/source.template.json
+# promises — "celix-v{TAG}.tar.gz" unpacking to a single top-level
+# "celix-{VERSION}/" directory — proves the exact shipped bytes build
+# standalone on the BCR presubmit Bazel majors, and publishes the GitHub
+# release. The ci.yml "release gate" owns tree health; this workflow owns
+# artifact production.
+#
+# The BCR presubmit matrix is Bazel 7.x + 8.x (see .bcr/presubmit.yml), so the
+# hermetic verification here re-runs the archive build on both majors. No
+# remote cache is configured for this repo; the verification uses a fresh
+# --output_base so the archive is proven independently.
+#
+# Licensed under the Apache License, Version 2.0.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-source-archive:
+    name: "Build + hash source archive"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha256: ${{ steps.hashes.outputs.sha256 }}
+      integrity: ${{ steps.hashes.outputs.integrity }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Same guard as the ci.yml release gate: a tag may only exist when it
+      # matches the MODULE.bazel version, so the archive name and the
+      # .bcr/source.template.json contract can never disagree with the tree.
+      - name: Resolve version and check tag
+        id: version
+        run: |
+          set -e
+          version="$(grep '^    version = ' MODULE.bazel | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          expected="v${version}"
+          if [ "$expected" != "${GITHUB_REF_NAME}" ]; then
+            echo "Release aborted: tag ${GITHUB_REF_NAME} does not match MODULE.bazel version (expected ${expected})."
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build source archive
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          git archive --prefix="celix-${version}/" --format=tar.gz -o "celix-v${version}.tar.gz" HEAD
+
+      - name: Verify archive layout
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          echo "First 5 archive entries:"
+          tar -tzf "celix-v${version}.tar.gz" | head -5
+          tar -tzf "celix-v${version}.tar.gz" | grep -qx "celix-${version}/MODULE.bazel"
+          echo "Layout OK: single top-level dir celix-${version}/ containing MODULE.bazel."
+
+      - name: Record hashes
+        id: hashes
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          sha256="$(sha256sum "celix-v${version}.tar.gz" | cut -d' ' -f1)"
+          integrity="sha256-$(openssl dgst -sha256 -binary "celix-v${version}.tar.gz" | base64 -w0)"
+          echo "sha256=${sha256}" >> "$GITHUB_OUTPUT"
+          echo "integrity=${integrity}" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize BCR submission values
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = process.env.WORKFLOW_VERSION;
+            core.summary.addHeading('BCR source.json values', 2);
+            core.summary.addRaw('Paste these into the BCR `modules/celix/' + version + '/source.json` submission:\n\n');
+            core.summary.addCodeBlock(
+              JSON.stringify({
+                integrity: process.env.WORKFLOW_INTEGRITY,
+                strip_prefix: 'celix-' + version,
+                url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo +
+                     '/releases/download/v' + version + '/celix-v' + version + '.tar.gz'
+              }, null, 2),
+              'json'
+            );
+            core.summary.addRaw('\nsha256: `' + process.env.WORKFLOW_SHA256 + '`');
+            await core.summary.write();
+        env:
+          WORKFLOW_VERSION: ${{ steps.version.outputs.version }}
+          WORKFLOW_SHA256: ${{ steps.hashes.outputs.sha256 }}
+          WORKFLOW_INTEGRITY: ${{ steps.hashes.outputs.integrity }}
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: celix-source-archive
+          path: celix-v${{ steps.version.outputs.version }}.tar.gz
+          if-no-files-found: error
+
+  verify-source-archive:
+    name: "Verify archive builds standalone (bazel ${{ matrix.bazel }})"
+    needs: build-source-archive
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel: ["7.x", "8.x"]
+
+    steps:
+      - name: Download source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: celix-source-archive
+          path: /tmp/verify
+
+      - name: Extract archive
+        run: |
+          version="${{ needs.build-source-archive.outputs.version }}"
+          archive="$(find /tmp/verify -name '*.tar.gz' | head -1)"
+          mkdir -p /tmp/verify/extract
+          tar -xzf "$archive" -C /tmp/verify/extract
+
+      # The exact bytes GitHub will publish: extracted to a scratch dir and
+      # built with a fresh output base on both the BCR presubmit Bazel majors.
+      # USE_BAZEL_VERSION wins over the archive's .bazelversion (bazelisk).
+      - name: Build and test the shipped archive hermetically
+        working-directory: /tmp/verify/extract
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel }}
+        run: |
+          set -e
+          cd "celix-${{ needs.build-source-archive.outputs.version }}"
+          ./bazelw "--output_base=/tmp/verify/bazel-output-${{ matrix.bazel }}" \
+            test --build_tests_only --test_output=errors //... \
+            --remote_upload_local_results=false
+
+  publish-release:
+    name: "Publish GitHub release"
+    needs: [build-source-archive, verify-source-archive]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: celix-source-archive
+          path: /tmp/publish
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          version="${{ needs.build-source-archive.outputs.version }}"
+          archive="$(find /tmp/publish -name '*.tar.gz' | head -1)"
+          gh release create "v${version}" "$archive" \
+            --repo "${{ github.repository }}" \
+            --title "celix-bazel v${version}" \
+            --generate-notes

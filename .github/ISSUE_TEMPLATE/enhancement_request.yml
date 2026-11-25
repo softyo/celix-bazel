@@ -1,0 +1,45 @@
+name: ✨ Enhancement Request
+description: Suggest a new feature or improvement for celix-bazel
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome suggestions to make `celix-bazel` better! Please describe the feature you'd like to see.
+
+  - type: textarea
+    id: feature_description
+    attributes:
+      label: Feature Description
+      description: What is the proposed enhancement?
+      placeholder: "Add support for exposing additional framework components as build targets."
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation / Use Case
+      description: Why is this needed? How will it help users of the Celix Bazel module?
+      placeholder: "Currently, I have to rebuild the module from source because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_api
+    attributes:
+      label: Proposed API (Optional)
+      description: If you have a vision for how the module's public targets or behavior should look, please share it here.
+      placeholder: |
+        cc_library(
+            name = "my_framework_extension",
+            deps = ["@celix//:framework_static"],
+        )
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to work on this feature myself.
+          required: false

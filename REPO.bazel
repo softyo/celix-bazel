@@ -1,0 +1,7 @@
+# Celix Bazel module repository marker.
+#
+# This file is the Starlark repository marker for this Bazel module. Unlike the
+# empty REPO.bazel in upstream Apache Celix release tarballs, this marker
+# records the repository's role: it is the Apache Celix Bazel module, a Bazel
+# wrapper around a snapshot of the Celix framework source tree, separate from
+# Celix's own CMake build. bzlmod defines this repository through MODULE.bazel.

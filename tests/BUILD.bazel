@@ -1,0 +1,14 @@
+# Minimal smoke test: link the framework static archive into a tiny
+# executable and assert the framework builds/links end to end. This mirrors
+# what rules_celix does at scale; the module itself needs only this smoke
+# check to keep the repo self-verifiable without the packaging rules.
+
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+cc_test(
+    name = "framework_smoke_test",
+    srcs = ["smoke_main.c"],
+    deps = [
+        "//framework:framework_static",
+    ],
+)

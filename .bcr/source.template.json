@@ -1,0 +1,5 @@
+{
+  "integrity": "",
+  "strip_prefix": "celix-{VERSION}",
+  "url": "https://github.com/softyo/celix-bazel/releases/download/{TAG}/celix-{TAG}.tar.gz"
+}

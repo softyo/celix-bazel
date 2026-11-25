@@ -1,0 +1,145 @@
+# CI for celix-bazel
+#
+# Runs on every push to main and on pull requests.
+# Jobs:
+#   buildifier  — lint Starlark formatting (fast gate)
+#   build_test  — bazel test //... and bazel build //... on Linux + macOS,
+#                 on Bazel 7.x and 8.x (mirrors the BCR presubmit matrix)
+#   metadata    — BCR template + version checks, gen/ header drift check
+#
+# Licensed under the Apache License, Version 2.0.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same PR push
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Fast formatting gate — fails early if Starlark is not buildifier-clean
+  # ---------------------------------------------------------------------
+  buildifier:
+    name: "buildifier check"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.7.0
+        with:
+          bazel-file: .bazelversion
+          sync-with-bazelrc: false
+
+      - name: Run buildifier (check mode)
+        run: bazel run @buildifier_prebuilt//:buildifier -- --mode=check -r .
+
+  # ---------------------------------------------------------------------
+  # Full build + test matrix (Linux + macOS) x (Bazel 7.x + 8.x).
+  # Both Bazel majors match the BCR presubmit matrix in .bcr/presubmit.yml.
+  # ---------------------------------------------------------------------
+  build_test:
+    name: "build & test (bazel ${{ matrix.bazel }}, ${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        bazel: ["7.x", "8.x"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.7.0
+        with:
+          bazel-file: .bazelversion
+          sync-with-bazelrc: false
+
+      - name: Bazel build all
+        run: bazel build //...
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel }}
+
+      - name: Bazel test
+        run: bazel test --build_tests_only --test_output=errors //...
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel }}
+
+  # ---------------------------------------------------------------------
+  # Metadata — required for BCR presubmit compatibility
+  # ---------------------------------------------------------------------
+  metadata:
+    name: "module metadata"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify MODULE.bazel version line is present
+        run: grep -q '^    version = ' MODULE.bazel
+
+      - name: Verify .bcr/ templates exist
+        run: test -f .bcr/metadata.template.json && test -f .bcr/source.template.json && test -f .bcr/presubmit.yml
+
+      - name: Check CMake-generated headers match the vendored include copies
+        run: |
+          set -e
+          diff -q framework/gen/framework/celix_framework_export.h framework/libs/framework/include/celix_framework_export.h
+          diff -q framework/gen/utils/celix_utils_export.h framework/libs/utils/include/celix_utils_export.h
+          diff -q framework/gen/utils/celix_err_constants.h framework/libs/utils/include/celix_err_constants.h
+
+  # ---------------------------------------------------------------------
+  # Release gate — runs on tag pushes (v*) so a release tag cannot
+  # be cut while the tree is broken.  Waits for the full matrix
+  # (buildifier + Linux/macOS x Bazel 7/8) and verifies tag/version
+  # consistency.
+  #
+  # This gate does not publish the release. The eventual release workflow
+  # MUST upload the archive as "celix-v{TAG}.tar.gz" unpacking to a top-level
+  # "celix-{VERSION}/" directory, matching .bcr/source.template.json
+  # (url uses {TAG}=v2.4.0; strip_prefix uses {VERSION}=2.4.0).
+  # ---------------------------------------------------------------------
+  release:
+    name: "release gate (tag ${{ github.ref_name }})"
+    needs: [buildifier, build_test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.7.0
+        with:
+          bazel-file: .bazelversion
+          sync-with-bazelrc: false
+
+      - name: Bazel build
+        run: bazel build //...
+
+      - name: Bazel test
+        run: bazel test //...
+
+      - name: Verify tag matches MODULE.bazel version
+        run: |
+          version="$(grep '^    version = ' MODULE.bazel | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          expected="v${version}"
+          if [ "$expected" != "${{ github.ref_name }}" ]; then
+            echo "Release gate failed: tag ${{ github.ref_name }} does not match MODULE.bazel version (expected $expected)."
+            exit 1
+          fi
+          echo "Release gate passed: tag ${{ github.ref_name }} matches MODULE.bazel version ${version}, matrix green."

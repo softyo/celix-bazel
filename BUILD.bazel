@@ -1,0 +1,24 @@
+# Apache Celix Bazel module, repo root.
+#
+# The real targets live under `framework/` (framework core + libs/utils) and
+# `uuid/` (hermetic libuuid replacement). This root package re-exposes the
+# canonical public target names so consumers can write `@celix//:framework`,
+# `@celix//:framework_static` and `@celix//:utils` without descending into the
+# layout of the vendored source tree.
+
+package(default_visibility = ["//visibility:public"])
+
+alias(
+    name = "framework",
+    actual = "//framework:framework",
+)
+
+alias(
+    name = "framework_static",
+    actual = "//framework:framework_static",
+)
+
+alias(
+    name = "utils",
+    actual = "//framework:utils",
+)

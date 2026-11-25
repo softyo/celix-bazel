@@ -1,0 +1,54 @@
+# Native Bazel build for libzip 1.10.1 (vendored source snapshot).
+#
+# Mirrors `third_party/libzip/libzip.BUILD` from rules_celix. It builds the
+# core zip reading/writing functionality (including DEFLATE via the vendored
+# zlib and traditional PKWARE) while excluding optional subsystems that would
+# drag in OpenSSL/GnuTLS/mbedTLS, CommonCrypto, bzip2/xz/zstd, and all
+# Windows-only sources.
+#
+# `config.h` and `zipconf.h` are the hand-authored platform config headers
+# checked into this package and injected into lib/ at vendoring time
+# (they are already present in the vendored tree). `zip_err_str.c` is the
+# hand-authored CMake output for libzip 1.10.1.
+#
+# Vendored instead of using the BCR libzip module (which builds via
+# rules_foreign_cc CMake and requires a host cmake toolchain) so the module
+# stays hermetic and byte-compatible with the rules_celix semantic baseline.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "libzip",
+    srcs = glob(
+        ["lib/zip_*.c"],
+        exclude = [
+            "lib/zip_algorithm_bzip2.c",
+            "lib/zip_algorithm_xz.c",
+            "lib/zip_algorithm_zstd.c",
+            "lib/zip_crypto_commoncrypto.c",
+            "lib/zip_crypto_gnutls.c",
+            "lib/zip_crypto_mbedtls.c",
+            "lib/zip_crypto_openssl.c",
+            "lib/zip_crypto_win.c",
+            "lib/zip_random_uwp.c",
+            "lib/zip_random_win32.c",
+            "lib/zip_source_file_win32.c",
+            "lib/zip_source_file_win32_ansi.c",
+            "lib/zip_source_file_win32_named.c",
+            "lib/zip_source_file_win32_utf16.c",
+            "lib/zip_source_file_win32_utf8.c",
+            "lib/zip_source_winzip_aes_decode.c",
+            "lib/zip_source_winzip_aes_encode.c",
+            "lib/zip_winzip_aes.c",
+        ],
+    ),
+    hdrs = glob(["lib/*.h"]),
+    copts = select({
+        "@platforms//os:macos": ["-D_FILE_OFFSET_BITS=64"],
+        "//conditions:default": [],
+    }),
+    includes = ["lib"],
+    deps = ["//third_party/zlib"],
+)

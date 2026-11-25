@@ -1,0 +1,7 @@
+# Vendored native dependencies for the Celix framework.
+#
+# zlib and libzip are kept as vendored source snapshots with native cc_library
+# overlays (hermetic, no host cmake/configure step), matching the semantic
+# baseline that rules_celix is regression-tested against.
+
+package(default_visibility = ["//visibility:public"])

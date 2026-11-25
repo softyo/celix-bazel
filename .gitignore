@@ -1,0 +1,11 @@
+# Bazel symlinks (hidden prefix from .bazelrc)
+/.bazel-bin
+/.bazel-celix-bazel
+/.bazel-out
+/.bazel-testlogs
+
+# Bazel output base
+/bazel-*
+
+# macOS
+.DS_Store
