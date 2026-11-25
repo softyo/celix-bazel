@@ -99,6 +99,12 @@ Root package aliases into the real targets; consumers reference `@celix//:...`:
   - `framework` (_FRAMEWORK_LINKOPTS): linux `-ldl -lpthread`, macos
     `-lpthread`, other platforms none (`-ldl` does not exist on Windows;
     `bazelw.bat` targets Windows).
+  - `framework`/`utils` (_LINUX_GNU_SOURCE_COPTS): `-D_GNU_SOURCE` on linux
+    only, matching upstream Celix's CMake build. libc needs it to declare the
+    GNU extensions the vendored sources use (`qsort_r` in array_list.c,
+    `asprintf`/`strcasestr` in celix_framework_utils.c/service_tracker.c, and
+    the `program_invocation_short_name`/`pthread_setname_np` guarded paths);
+    without it, newer compilers (GCC 14+) fail on implicit declarations.
   - zlib: `-DZ_HAVE_UNISTD_H` on linux + macos.
   - libzip: `-D_FILE_OFFSET_BITS=64` on macos only.
 - libzip's `zip_*.c` glob must keep excluding the crypto (openssl/gnutls/

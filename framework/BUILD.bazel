@@ -72,6 +72,17 @@ _FRAMEWORK_LINKOPTS = select({
     "//conditions:default": [],
 })
 
+# Upstream Celix compiles with _GNU_SOURCE on Linux (its CMake build defines
+# it). libc then exposes the GNU extensions the vendored sources rely on:
+# qsort_r (array_list.c), asprintf/strcasestr (celix_framework_utils.c,
+# service_tracker.c) and the program_invocation_short_name / pthread_setname_np
+# paths guarded in celix_bundle_cache.c and celix_threads.c. Without it, newer
+# compilers (GCC 14+) fail on implicit declarations.
+_LINUX_GNU_SOURCE_COPTS = select({
+    "@platforms//os:linux": ["-D_GNU_SOURCE"],
+    "//conditions:default": [],
+})
+
 # Compiled `libs/utils` archive. Every object is always linked so a container
 # runner (and `framework = "static"` bundles) carry the full utils API surface;
 # a dlopened bundle's unresolved `celix_*` / `celix_utils_*` resolve against
@@ -100,6 +111,7 @@ cc_library(
         "libs/utils/src/version_range.c",
     ],
     hdrs = _UTILS_HDRS,
+    copts = _LINUX_GNU_SOURCE_COPTS,
     includes = _UTILS_INCLUDES,
     deps = ["//third_party/libzip"],
     alwayslink = True,
@@ -163,6 +175,7 @@ cc_library(
         "libs/framework/src/wire.c",
     ],
     hdrs = _FRAMEWORK_HDRS,
+    copts = _LINUX_GNU_SOURCE_COPTS,
     includes = _FRAMEWORK_INCLUDES,
     linkopts = _FRAMEWORK_LINKOPTS,
     deps = [

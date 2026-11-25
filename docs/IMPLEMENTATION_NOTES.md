@@ -109,6 +109,14 @@ in `lib/`, the module can switch back to `bazel_dep(name = "libzip")` with one
   `select({linux: [-ldl, -lpthread], macos: [-lpthread], default: []})`;
   previously the default branch applied `-ldl` to every non-macOS platform,
   which does not link on Windows (a listed target per `bazelw.bat`).
+- **`_GNU_SOURCE` on Linux.** The `utils` and `framework_static` targets now
+  compile with `-D_GNU_SOURCE` on Linux (`_LINUX_GNU_SOURCE_COPTS`), matching
+  upstream Celix's CMake build. glibc only declares the GNU extensions the
+  vendored sources use (`qsort_r` in array_list.c, `asprintf`/`strcasestr` in
+  celix_framework_utils.c/service_tracker.c, `program_invocation_short_name` /
+  `pthread_setname_np` guarded paths) under these feature macros; without the
+  define, GCC 14+ (ubuntu-latest CI toolchain) fails on
+  `-Wimplicit-function-declaration` as an error.
 - **Smoke test exercises the framework.** `tests/smoke_main.c` now calls
   `celix_frameworkFactory_createFramework(NULL)` and
   `celix_frameworkFactory_destroyFramework(fw)` instead of only printing; this
